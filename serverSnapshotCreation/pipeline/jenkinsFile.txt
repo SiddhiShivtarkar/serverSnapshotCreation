@@ -1,0 +1,87 @@
+currentBuild.displayName = "${ticketDetails}"+"#"+currentBuild.number
+def test_output1 = ""
+def project_id = ""
+def zone_name = ""
+def IP = ""
+pipeline {
+        agent any
+        stages {
+		   stage('Validate Input') {
+                        steps {
+                                dir("/var/lib/jenkins/IDOP/serverSnapshotCreation/playbooks/") {
+                                    sh "sudo ansible-playbook -i /etc/ansible/inventory serverSnapshotCreation.yml --tags='validate_input' --extra-vars 'project_id=${project_id} zone_name=${zone_name} instance_name=${host} request_id=${ticketDetails}'"
+                                }
+                        }
+                }
+		stage("Find Project ID") {
+			steps {
+				script{
+					echo "=========================================== GET PROJECT ID ==============================================="	
+					 project_id = sh (
+					script: '/var/lib/jenkins/IDOP/iaasDbCreationMysqlWindows/scripts/getProjectId.sh "${host}" "${vm_environment}"',
+					returnStdout: true
+					).trim() 
+					echo "Project ID: ${project_id}"
+				} 
+			}
+		} 
+		
+		stage("Set Project ID") {
+            steps {
+                script{
+                    echo "=========================================== SET PROJECT ID ==============================================="
+                        svc_acc = sh ( script: 'gcloud auth activate-service-account sa-idop-prod@prj-sa-acn.iam.gserviceaccount.com --key-file="/etc/prodsvc.json"',
+                        returnStdout: true ).trim()
+                        echo "svc acc: ${svc_acc}"
+                        sh ( script: 'gcloud config set project prj-acn-dev-idopauto',
+                        returnStdout: true ).trim()
+}
+}
+}
+		
+        stage("find ip") {
+			steps {    	
+
+				echo "============================================= RETRIEVE INSTANCE DETAILS =================================================="	
+				script{
+
+                        
+						IP = sh (  
+						script: """
+                        gcloud compute instances list --project "${project_id}" --format="(INTERNAL_IP)" --filter="${host}" --account="sa-idop-prod@prj-sa-acn.iam.gserviceaccount.com" | tail -n1  
+                        """,
+						returnStdout: true
+						).trim() 
+						echo "${IP}"	
+                        			
+                }
+			}
+		}
+
+           stage("find zone") {
+            steps {  
+				echo "============================================= RETRIEVE Zone name =================================================="	
+				script{
+
+                        
+						zone_name = sh (  
+						script: """
+                        gcloud compute instances list --project "${project_id}" --format="(ZONE)" --filter="${host}" --account="sa-idop-prod@prj-sa-acn.iam.gserviceaccount.com" | tail -n1  
+                          """,
+						returnStdout: true
+						).trim() 
+						echo "${zone_name}"	
+                        			
+                }
+           }
+           }
+
+                stage('Create a Snapshot') {
+                        steps {
+                                dir("/var/lib/jenkins/IDOP/serverSnapshotCreation/playbooks") {
+                                    sh "ansible-playbook -i /etc/ansible/inventory serverSnapshotCreation.yml --extra-vars 'project_id=${project_id} zone_name=${zone_name} instance_name=${host} request_id=${ticketDetails}' -vvv"
+                                }
+                        }
+                }
+            }    
+        }

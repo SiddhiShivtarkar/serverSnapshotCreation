@@ -1,0 +1,19 @@
+########################validating whether given host is present in specified zone and specified project or not, using SA for authentication######################################################################
+---
+- 
+  name: Validate instance information
+  gcp_compute_instance_info:
+    zone: "{{ zone_name }}"
+    filters:
+    - name = "{{ instance_name }}"
+    project: "{{ project_id }}"
+    auth_kind: serviceaccount
+    service_account_file: /etc/prodsvc.json
+  register: instance_info
+- 
+  fail:
+    msg: "Unable to retrieve instance details"
+  when: instance_info.resources|length == 0
+- 
+  debug:
+    msg: "Instance is available"

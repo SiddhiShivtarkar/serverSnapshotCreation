@@ -1,0 +1,75 @@
+currentBuild.displayName = "${ticketDetails}"+"#"+currentBuild.number
+def test_output1 = ""
+def project_id = ""
+def zone_name = ""
+def IP = ""
+def env = ""
+pipeline {
+    agent any
+    stages {
+        
+        
+        stage('Validate Input Details'){
+            steps{
+                sh"docker exec ansible sh -c 'ansible-playbook /ansible_playbooks/IDOP/IDOP-dev-env/Siemens-Automation/serverSnapshotCreation/playbooks/serverSnapshotCreation.yml  -e instance_name=${host} -e request_id=${ticketDetails} --tags=validate_input'"
+            }
+        }
+        
+        
+        stage('Find Project ID') {
+            steps {
+                script{
+					echo "=========================================== GET PROJECT ID ==============================================="	
+					 project_id = sh (
+					script: 'docker exec ansible sh /ansible_playbooks/IDOP/IDOP-dev-env/Siemens-Automation/restartMssqlDBWindows/scripts/getProjectId.sh "${host}" "${vm_environment}"',
+					returnStdout: true
+					).trim() 
+					echo "Project ID: ${project_id}"
+				} 
+            }
+        }
+             stage("Find Ip") { 
+                 steps { 
+                     echo "============================================= RETRIEVE INSTANCE DETAILS ==================================================" 
+                     script{
+                         IP = sh ( 
+                             script: """
+                             docker exec ansible sh -c 'export PATH="/google-cloud-sdk/bin:$PATH"; gcloud auth activate-service-account sa-idop-prod@prj-sa-acn.iam.gserviceaccount.com --key-file=/etc/prodsvc.json; gcloud config set project prj-acn-dev-idopauto; gcloud compute instances list --project "${project_id}" --format="(INTERNAL_IP)" --filter="${host}" --account="sa-idop-prod@prj-sa-acn.iam.gserviceaccount.com" | tail -n1 '
+                             """, 
+                             returnStdout: true 
+                             ).trim() 
+                             echo "${IP}" 
+                             } 
+                    } 
+               }
+
+
+               stage("Find zone") { 
+                 steps { 
+                     echo "============================================= RETRIEVE INSTANCE DETAILS ==================================================" 
+                     script{
+                         zone_name = sh ( 
+                             script: """
+                             docker exec ansible sh -c 'export PATH="/google-cloud-sdk/bin:$PATH"; gcloud auth activate-service-account sa-idop-prod@prj-sa-acn.iam.gserviceaccount.com --key-file=/etc/prodsvc.json; gcloud config set project prj-acn-dev-idopauto; gcloud compute instances list --project "${project_id}" --format="(ZONE)" --filter="${host}" --account="sa-idop-prod@prj-sa-acn.iam.gserviceaccount.com" | tail -n1 '
+                             """, 
+                             returnStdout: true 
+                             ).trim() 
+                             echo "${zone_name}" 
+                             } 
+                    } 
+               }
+        
+        
+        
+        stage('Create Snapshot'){
+            steps{
+                withCredentials([string(credentialsId: 'serviceAccountFilePath',variable: 'serviceAccountFilePath')]) {
+                    sh"docker exec ansible sh -c 'ansible-playbook /ansible_playbooks/IDOP/IDOP-dev-env/Siemens-Automation/serverSnapshotCreation/playbooks/serverSnapshotCreation.yml -e serviceAccountFilePath=${serviceAccountFilePath} -e project_id=${project_id} -e zone_name=${zone_name} -e instance_name=${host} -e request_id=${ticketDetails} -e env=${env} --tags=create_snapshot'"
+                }
+            }
+        }
+        
+        
+    }
+}
+

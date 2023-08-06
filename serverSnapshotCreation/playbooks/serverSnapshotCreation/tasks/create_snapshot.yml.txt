@@ -1,0 +1,111 @@
+---
+###########################################include it in snapshot name ####################################################################################
+-
+  set_fact:
+    random_value: "{{ lookup('password', '/dev/null length=8 chars=ascii_lowercase,digits ') }}"
+- 
+  debug: var=random_value
+
+##############################################include it in snapshot name #################################################################################
+-
+  block:
+  - 
+    name: Date
+    command: "date '+%Y%m%d%H%M%S'"
+    environment:
+      TZ: Asia/Kolkata
+    register: date_and_time
+  - 
+    debug: var=date_and_time
+  rescue:
+  -
+    fail:
+      msg: Unable to get data and time""
+
+##################################################include randomno, date and create  snapshot name #################################################
+- 
+  set_fact:
+    snapshot_name: "-{{ date_and_time.stdout }}-{{ random_value }}"
+    location: "{{ zone_name.split('-') }}"
+- 
+  debug: var=snapshot_name
+- 
+  debug: var=location
+
+###############################################setting deletion_protection=yes to protect snapshot from distaster recovery ##########################
+-
+  block:
+  - 
+    name: Retrieving Instance details
+    gcp_compute_instance:
+      zone: "{{ zone_name }}"
+      name: "{{ instance_name }}"
+      project: "{{ project_id }}"
+      auth_kind: serviceaccount
+      service_account_file: /etc/prodsvc.json
+      deletion_protection: yes
+    register: instance_details
+  - 
+    debug: var=instance_details
+  rescue:
+  -
+    fail:
+      msg: "Unable to retrieve instance details: {{ instance_details }}"
+#############################create snapshot iterate over instance_details.disks and one by one create snapshots of OS and Data disks that are present #####
+-
+  block:
+  - 
+    name: Create Snapshot of the instance
+    gcp_compute_snapshot:
+      zone : "{{ zone_name }}"
+      source_disk: 
+        name: "{{ item.source.split('/')[-1] }}"
+      labels:
+        application: "{{ instance_details.labels['application'] }}"
+        environment: "{{ instance_details.labels['environment'] }}"
+        requestid: "{{ request_id|lower }}"
+      name: "{{ item.source.split('/')[-1] }}-{{ snapshot_name }}"
+      storage_locations:
+      - "{{ location.0 }}-{{ location.1 }}"
+      project: "{{ project_id }}"
+      auth_kind: serviceaccount
+      service_account_file: /etc/prodsvc.json
+    with_items: "{{ instance_details.disks }}"
+    register: snapshot_creation
+  -
+    debug: var=snapshot_creation
+  rescue:
+  -
+    fail:
+      msg: "Unable to create snapshot {{ snapshot_creation }}"
+        #- 
+        # debug:
+        # msg: "{{ snapshot_creation }}"
+##################################validate whether snapshot created or not ################################################
+-
+  block:
+  -
+    name: Validate Snapshot is created or not
+    gcp_compute_snapshot_info:
+      filters:
+      - name = "{{ item.source.split('/')[-1] }}-{{ snapshot_name }}"
+      project: "{{ project_id }}"
+      auth_kind: serviceaccount
+      service_account_file: /etc/prodsvc.json
+    with_items: "{{ instance_details.disks }}"
+    register: snapshot_validate
+  - debug: var=snapshot_validate
+  -
+    debug:
+      msg:
+      - "Output for rundeck start" 
+      - "Snapshots are taken successfully for the instance {{ instance_name }}"
+      - "Snapshots {{ item.source.split('/')[-1] }}-{{ snapshot_name }} is created for disk {{ item.source.split('/')[-1] }} that is attached to instance {{ instance_name }} in project {{ project_id }}"
+      - "Output for rundeck end"
+    with_items: "{{ instance_details.disks }}"
+    when: snapshot_validate.results|length != 0
+  rescue:
+  -
+    fail: 
+     msg: "Failed to validate snapshot: {{ snapshot_validate }}"
+###############################################################################################################################

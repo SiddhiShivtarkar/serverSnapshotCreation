@@ -1,0 +1,11 @@
+---
+# tasks file for snapshot_creation
+- import_tasks: validate_input.yml
+  tags:
+    - validate_input
+- import_tasks: validate_instance.yml
+  tags:
+    - validate_instance
+- import_tasks: create_snapshot.yml
+  tags:
+    - create_snapshot

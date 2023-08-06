@@ -1,0 +1,7 @@
+##############################Parameters coming from SNOW-ATR-Rundeck-Jenkins##########################################
+---
+-
+  fail:
+    msg: Failed due to insufficient values
+  when:  request_id is undefined or instance_name is undefined or request_id == "" or instance_name == ""
+      # when: request_id is undefined or project_id is undefined or zone_name is undefined or instance_name is undefined or request_id == "" or project_id == "" or zone_name == "" or instance_name == ""
